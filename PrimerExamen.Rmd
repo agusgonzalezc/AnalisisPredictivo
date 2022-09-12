@@ -1,0 +1,791 @@
+---
+title: "Análisis Predictivo"
+author: "Agustina Gonzalez Crespo"
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::html_document2:
+    theme: readable
+    toc: true #TRUE to include a table of contents in the output
+    toc_depth: 1 # Depth of headers to include in table of contents
+    toc_float: true
+    code_download: false
+    number_sections: true
+    citation_package: natbib
+link-citations: yes
+bibliography: []
+---
+
+```{r clean,  message=F, include=FALSE}
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(ggplot2)
+library(funModeling)
+library(factoextra)
+library(cluster)
+library(NbClust)
+library(viridis)
+library(forcats)
+library(RColorBrewer)
+library(tidyverse)
+library(corrplot)
+library(cowplot)
+library(rpart)
+library(caret)
+options(dplyr.summarise.inform = FALSE)
+setwd("/Users/agusgc21/Desktop/ITBA/SEGUNDO CUATRIMESTRE/ANALISIS PREDICTIVO/ANALISIS PREDICTIVO")
+base <- read.csv("default of credit card clients.csv",sep=";")
+```
+
+**Primer Examen**
+
+# Introducción
+
+```{r,echo=FALSE}
+cant_variables <- dim(base)[2]
+cant_registros <- dim(base)[1]
+```
+
+El presente trabajo tiene como objetivo analizar la base de datos Default of redit card clients de  UCI machine learning repository, la cual se puede encontrar en el siguiente link: https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients. La base de datos cuenta con **`r cant_variables`** variables y **`r cant_registros`** registros que contienen informacion sobre clientes de tarjetas de credito en Taiwan desde Abril del 2005 hasta Septiembre del 2005. 
+El objetivo es poder predecir si el cliente va a entrar en default o no, es decir si va a saldar su cuenta con el banco o no.
+
+# Exploracion de la variables
+ Las primeras variables contienen informacion personal sobre el usuario: 
+
+- ID: ID of each client
+- LIMIT_BAL: Amount of given credit in NT dollars (includes individual and family/supplementary credit
+- SEX: Gender (1=male, 2=female)
+- EDUCATION: (1=graduate school, 2=university, 3=high school, 4=others)
+ -MARRIAGE: Marital status (1=married, 2=single, 3=others)
+- AGE: Age in years
+ 
+ Las siguientes variables contienen informacion sobre el historial de pagos, i. e.cuanto demoro el cliente en realizar el pago para un mes en especifico:
+ 
+- PAY_0: Repayment status in September, 2005 (-1=pay duly, 1=payment delay for one month, 2=payment delay for two months, … 8=payment delay for eight months, 9=payment delay for nine months and above)
+- PAY_2: Repayment status in August, 2005 (-1=pay duly, 1=payment delay for one month, 2=payment delay for two months, … 8=payment delay for eight months, 9=payment delay for nine months and above)
+- PAY_3: Repayment status in July, 2005 (-1=pay duly, 1=payment delay for one month, 2=payment delay for two months, … 8=payment delay for eight months, 9=payment delay for nine months and above)
+- PAY_4: Repayment status in June, 2005 (-1=pay duly, 1=payment delay for one month, 2=payment delay for two months, … 8=payment delay for eight months, 9=payment delay for nine months and above)
+- PAY_5: Repayment status in May, 2005 (-1=pay duly, 1=payment delay for one month, 2=payment delay for two months, … 8=payment delay for eight months, 9=payment delay for nine months and above)
+- PAY_6: Repayment status in April, 2005 (-1=pay duly, 1=payment delay for one month, 2=payment delay for two months, … 8=payment delay for eight months, 9=payment delay for nine months and above)
+ 
+Otras atributoos consideran la informacion relacionada con el monto del estado de cuenta, i.e. el monto del estado de cuenta que la compania le expide al cliente para un mes en especifico:
+
+- BILL_AMT1: Amount of bill statement in September, 2005 (NT dollar)
+- BILL_AMT2: Amount of bill statement in August, 2005 (NT dollar)
+- BILL_AMT3: Amount of bill statement in July, 2005 (NT dollar)
+- BILL_AMT4: Amount of bill statement in June, 2005 (NT dollar)
+- BILL_AMT5: Amount of bill statement in May, 2005 (NT dollar)
+- BILL_AMT6: Amount of bill statement in April, 2005 (NT dollar)
+ 
+Las ultimas variables consideran el monto del pago anterior: 
+
+- PAY_AMT1: Amount of previous payment in September, 2005 (NT dollar)
+- PAY_AMT2: Amount of previous payment in August, 2005 (NT dollar)
+- PAY_AMT3: Amount of previous payment in July, 2005 (NT dollar)
+- PAY_AMT4: Amount of previous payment in June, 2005 (NT dollar)
+- PAY_AMT5: Amount of previous payment in May, 2005 (NT dollar)
+- PAY_AMT6: Amount of previous payment in April, 2005 (NT dollar)
+ 
+ La variable a predicir es:
+ 
+- default.payment.next.month: Default payment (1=yes, 0=no)
+
+Luego de haber analizado todas las variables, se llego a la conclusion de que la variable *ID* no se utilizara para el analisis de la base de datos. A su vez, las variables *default.payment.next.month* y *PAY_0* se cambiaran a *DEFAULT* y *PAY_1* respectivamente, para facilitar el trabajo.
+
+```{r, echo=FALSE}
+df <- data.frame(base[,-1])
+df <- df %>% rename("DEFAULT"="default.payment.next.month","PAY_1"="PAY_0")
+```
+
+A continuacion, se realizo la siguiente tabla para poder ver informacion sobre las variables.
+```{r, echo=FALSE, include=FALSE}
+#saco las columnas de infinito
+dfstat <- data.frame(df_status(base))
+dfstat <- dfstat[,-5]
+dfstat <- dfstat[,-6]
+```
+
+```{r, echo=FALSE}
+kable(dfstat, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE),caption="Status de la base de datos",
+  col.names = c("Variable", "Cantidad de ceros", "Porcentaje de ceros", "Cantidad NAs", "Porcentaje NAs","Tipo","Unique")) %>% 
+  kableExtra::kable_styling()
+```
+
+Se puede observar que ninguna de las variables poseen **NAs** y que las variables que poseen ceros son coherentes con la descripcion de la variable. Por el otro lado, se puede notar que las variables *EDUCATION* y *MARRIAGE* poseen un valor alto en unique. Esto sera analizado posteriormente. 
+
+# Variables Categoricas
+
+Primero se confecciono la siguiente tabla con los niveles de las variables categoricas *Education*, *Marriage* y *Sex*, las cuales fueron convertidas a **factor**.
+
+```{r, echo=FALSE}
+# Summary de variables categoricas
+df$SEX = as_factor(df$SEX)
+df$EDUCATION = as_factor(df$EDUCATION)
+df$MARRIAGE = as_factor(df$MARRIAGE)
+df_cat <- data.frame(df[["SEX"]],df[["MARRIAGE"]],df[["EDUCATION"]])
+colnames(df_cat) <- c("SEX","MARRIAGE","EDUCATION")
+df_cat <- summary(df_cat)
+```
+
+```{r, echo=FALSE}
+kable(df_cat, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE)) %>% 
+  kableExtra::kable_styling()
+  options(knitr.kable.NA = '')
+```
+
+Se puede observar que las variables *EDUCATION* y *MARRIAGE* tienen mas niveles de los que fueron mencionados en la descripcion de la base de datos. Para poder decidir que hacer con esos niveles,veremos la distribucion de los datos.
+
+```{r, echo=FALSE}
+ggplot(data = df, aes(x = EDUCATION)) +
+    geom_bar(position = "dodge",fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de clientes")
+sum_edu0= df %>% filter(EDUCATION==0) %>% count()
+sum_edu5= df %>% filter(EDUCATION==5) %>% count()
+sum_edu6= df %>% filter(EDUCATION==6) %>% count()
+total_edu= sum_edu0+sum_edu6+sum_edu5
+porc_edu=(total_edu/cant_registros)*100
+```
+
+Para la variable *Educacion*, los datos que son 0, 5 y 6 solo representan un `r porc_edu`%, por lo tanto van a ser eliminados del data set.
+
+```{r,echo=FALSE}
+ggplot(data = df, aes(x = MARRIAGE)) +
+    geom_bar(position = "dodge",fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de clientes")
+sum_marr0 = df %>% filter(MARRIAGE==0) %>% count()
+porc_marr=(sum_marr0/cant_registros)*100
+```
+
+Lo mismo se hara para la variable *Marriage* ya que los datos que son 0 representan un `r porc_marr`%
+
+```{r,echo=FALSE}
+#Eliminacion de datos en Education
+df_1 <- df
+df_1 <- subset(df,EDUCATION!=0 & EDUCATION!=5 & EDUCATION!=6)
+df_1 <- df_1 %>% mutate(EDUCATION=droplevels(EDUCATION))
+```
+
+```{r,echo=FALSE}
+#Eliminacion de datos en Marriage
+df_2 <- df_1
+df_2 <- subset(df_1,MARRIAGE!=0)
+df_2 <- df_2 %>% mutate(MARRIAGE=droplevels(MARRIAGE))
+df <- df_2
+```
+
+```{r,echo=FALSE}
+levels(df$SEX)[levels(df$SEX) == "1"] <- "Male"
+levels(df$SEX)[levels(df$SEX) == "2"] <- "Female"
+
+levels(df$EDUCATION)[levels(df$EDUCATION) == "1"] <- "Graduate School"
+levels(df$EDUCATION)[levels(df$EDUCATION) == "2"] <- "University"
+levels(df$EDUCATION)[levels(df$EDUCATION) == "3"] <- "High School"
+levels(df$EDUCATION)[levels(df$EDUCATION) == "4"] <- "Other"
+
+levels(df$MARRIAGE)[levels(df$MARRIAGE) == "1"] <- "Married"
+levels(df$MARRIAGE)[levels(df$MARRIAGE) == "2"] <- "Single"
+levels(df$MARRIAGE)[levels(df$MARRIAGE) == "3"] <- "Other"
+```
+
+Luego de haber eliminado los datos, la distribucion de la variable Education y Marriage quedaron de la siguiente manera.
+
+- **Frecuencia de Education**
+
+```{r,echo=FALSE,results='hide',warning=FALSE}
+freq(df$EDUCATION)
+```
+
+- **Frecuencia de Marriage**
+
+```{r,echo=FALSE,results='hide',warning=FALSE}
+freq(df$MARRIAGE)
+```
+
+La opcion Otro en la variable *Marriage* pude referirse a divorciado o viudo.
+
+# Variables numericas
+
+## Variable Age
+
+```{r, echo=FALSE}
+# Summary de edad
+df_age <- summary(df %>% select(AGE))
+```
+
+```{r, echo=FALSE}
+kable(df_age, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE),caption = "Summary de Age") %>% 
+  kableExtra::kable_styling()
+```
+
+```{r, echo=FALSE,message=FALSE}
+ggplot(df, aes(x=AGE)) + 
+  geom_histogram(color="black", fill="light blue")+
+  labs(y="cantidad de personas")
+```
+
+Del histograma se puede observar que la mayoria de los clientes tienen entre 20 y 40 años. Los outliers no se van a eliminar por ahora ya que son edades razonables para el analisis.
+
+## Variable Limit_Bal
+
+```{r, echo=FALSE}
+# Summary de limite del credito
+df_limit <- summary(df %>% select(LIMIT_BAL))
+```
+
+```{r, echo=FALSE}
+kable(df_limit, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE),caption = "Summary de Limit_Bal") %>% 
+  kableExtra::kable_styling()
+```
+
+```{r, echo=FALSE,message=FALSE}
+ggplot(df, aes(x=LIMIT_BAL)) + 
+  geom_histogram(color="black", fill="light blue")+
+  labs(y="cantidad de personas")
+```
+
+Al analizar el limite de credito, se puede contemplar que la mayoria de los mismos tienen valores entre 0 y 250,000. Ademas, el rango de la variables es alto por lo que se estudiaran un poco en profundidad a aquellos clientes que tienen un limite de credito mayor a 750,000.
+
+```{r, echo=FALSE}
+int <- df %>% filter(LIMIT_BAL>750000)
+```
+
+```{r, echo=FALSE}
+kable(int, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE),caption = "Summary de Limit_Bal") %>% 
+  kableExtra::kable_styling()
+```
+
+Los clientes con los limites mas altos tambien realizan gastos altos, esto indica que podrian no ser considerados como outliers.
+
+## Variable PAY_N
+
+```{r, echo=FALSE}
+# Summary de atraso de pago
+df_pay <- summary(df %>% select('PAY_1', 'PAY_2', 'PAY_3', 'PAY_4', 'PAY_5', 'PAY_6'))
+```
+
+```{r, echo=FALSE}
+table_pay <- kable(df_pay, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE),caption = "Summary de PAY_N") %>% 
+  kableExtra::kable_styling()
+table_pay
+```
+
+La tabla muestra que el minimo de todas las variables de atraso de pago es -2. Esto no esta de acuerdo con lo establecido en la descripcion en el cual se establecio el minimo como -1. Del siguiente grafico, se puede concluir que los valores 0 y -2 no se eliminaran ya que representan un porcentaje alto de los datos. El 0 sera considerado como el -1, es decir que el cliente pago su deuda a tiempo.
+
+```{r, echo=FALSE,results='hide',warning=FALSE}
+freq(df$PAY_2)
+```
+
+## Variable Bill_AmtN
+
+```{r, echo=FALSE}
+# Summary de montos de estados de cuentas
+df_bill <- summary(df %>% select('BILL_AMT1', 'BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6'))
+```
+
+```{r, echo=FALSE}
+kable(df_bill, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE),caption = "Summary de Bill_AmtN") %>% 
+  kableExtra::kable_styling()
+```
+
+Algo que llama la atencion de estos estadisticos es que existen montos negativos para el estado de cuentas del cliente. Esto sera interpretado como saldo a favor del cliente.
+
+## Variable Pay_AmtN
+
+```{r, echo=FALSE}
+# Summary de montos pagados
+df_payamt <- summary(df %>% select('PAY_AMT1', 'PAY_AMT2', 'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6'))
+```
+
+```{r, echo=FALSE}
+kable(df_payamt, format = "html", table.attr = "style='width:90%;'",digits = 3, format.args = list(big.mark = ",",scientific = FALSE),caption = "Summary de Pay_AmtN") %>% 
+  kableExtra::kable_styling()
+```
+
+Como se expresa para el limite de credito, el rango de la variable es alto debido a que existen clientes que no abonan ninguna de sus cuentas asi como tambien aquellos que tienen consumos elevados, por lo tanto tendran que abonar montos altos.
+
+## Correlacion
+
+La correlacion entre las variables se estudio para ver si algunas de las variables estaban fuertemente correlacionadas entre si ya que esto podria influir en los algoritmos utilizados.
+
+```{r, echo=FALSE}
+#Correlacion
+M <-cor(df %>% select_if(is.numeric))
+corrplot(M, type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+```
+
+Las variables *BILL_AMTN* tienen una fuerte correlacion entre ellas, lo cual es coherente con el comportamiento humano. Esto se debera analizar como solucionar luego.
+
+
+# Particion
+
+Se realizo la particion del data set en un 80% entrenamiento y un 20% testeo.
+```{r,echo=FALSE}
+set.seed(123); particion=createDataPartition(y=df$DEFAULT,p=0.8,list=FALSE)
+entreno=df[particion,]
+testeo=df[-particion,]
+```
+
+# Analisis de tendencias
+
+## Default
+
+Para comenzar con el analisis de tendencias, se busco el balance de la variable a predecir **Default** la cual se convirtio en factor.
+```{r,echo=FALSE,results='hide',warning=FALSE,message=FALSE}
+#Porcentaje de default
+df$DEFAULT=as.factor(df$DEFAULT)
+freq(df$DEFAULT)
+```
+
+Se puede observar que la variable esta desbalanceada ya que solo el **22,12%** de los clientes entraron en default.
+
+## Genero
+
+```{r, echo=FALSE,warning=FALSE}
+# SEXO
+df_SEX <- df %>% group_by(SEX,DEFAULT) %>% summarise(n = n()) 
+ggplot(df_SEX, aes(x = SEX, y=n, fill = DEFAULT)) +
+  geom_col(position = "dodge") +
+  geom_text(
+    aes(label =n),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  ) + 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="cantidad de clientes")
+```
+
+```{r, echo=FALSE}
+# SEXO porcentaje default
+df_SEX <- df %>% group_by(SEX,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+df_SEX %>% filter(DEFAULT==1) %>% ggplot(aes(x=SEX,y=freq,fill=SEX)) + 
+  geom_bar(stat="identity") +
+  geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 5,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+En el dataset hay mas mujeres que hombres y estos ultimos tienen una leve probabilidad mas alta de default.
+
+## Estado Civil
+
+```{r, echo=FALSE,warning=FALSE}
+# MARRIAGE
+df_MARRIAGE <- df %>% group_by(MARRIAGE,DEFAULT) %>% summarise(n = n())
+df_MARRIAGE %>% ggplot(aes(x = MARRIAGE, y=n, fill = DEFAULT)) +
+  geom_col(position = "dodge") +
+  geom_text(
+    aes(label =n),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="cantidad de clientes")
+```
+
+```{r, echo=FALSE,warning=FALSE}
+# MARRIAGE porcentaje default
+df_MARRIAGE <- df %>% group_by(MARRIAGE,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+df_MARRIAGE %>% filter(DEFAULT==1) %>% ggplot(aes(x=MARRIAGE,y=freq,fill=MARRIAGE)) + 
+  geom_bar(stat="identity") +
+  geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 5,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+Logicamente, la mayoria de las personas estan casadas o solteras. Si bien las probabilidades de default son muy parecidas, las personas que tienen la mayor probabilidad son los otros.
+
+## Educacion
+
+```{r, echo=FALSE,warning=FALSE}
+# EDUCATION
+df_EDUCATION <- df %>% group_by(EDUCATION,DEFAULT) %>% summarise(n = n()) 
+df_EDUCATION %>% ggplot(aes(x = EDUCATION, y=n, fill = DEFAULT)) +
+  geom_col(position = "dodge") +
+  geom_text(
+    aes(label =n),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="cantidad de clientes")
+```
+
+```{r, echo=FALSE,warning=FALSE}
+# EDUCATION porcentaje default
+df_EDUCATION <- df %>% group_by(EDUCATION,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+df_EDUCATION %>% filter(DEFAULT==1) %>% ggplot(aes(x=EDUCATION,y=freq,fill=EDUCATION)) + 
+  geom_bar(stat="identity") +
+  geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 5,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+La mayoria de las personas tienen un nivel de educacion University. A su vez, las personas que tienen un nivel de educacion High School tienen la probabilidad mas alta de default. Si solo se toman los primeros tres niveles de educacion, se puede inferir que cuanto mayor nivel de educacion, menor probabilidad de default.
+Aqui se deberia investigar sobre la opcion Other ya que seria importante saber si es un nivel inferior a High School o no.
+
+## Edad
+
+```{r,echo=FALSE,warning=FALSE}
+df <- df %>% mutate(rango_AGE=cut(df$AGE,c(20, 25, 30, 35, 40, 50, 60, 80)))
+# AGE
+df_AGE <- df %>% group_by(rango_AGE,DEFAULT) %>% summarise(n = n())
+df_AGE %>% ggplot(aes(x = rango_AGE, y=n, fill = DEFAULT)) +
+  geom_col(position = "dodge") +
+  geom_text(
+    aes(label =n),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="cantidad de clientes")
+```
+
+```{r, echo=FALSE,warning=FALSE}
+# AGE porcentaje default
+df_AGE <- df %>% group_by(rango_AGE,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+df_AGE %>% filter(DEFAULT==1) %>% ggplot(aes(x=rango_AGE,y=freq,fill=rango_AGE)) + 
+  geom_bar(stat="identity") +
+  geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 5,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+Como fue mencionado anteriormente, la mayoria de los clientes estan entre los 25 y 50 años. Tambien, se puede observar que los clientes mas jovenes y los mas adultos, tienen mayor probabilidad de default.
+
+## Limite de Credito
+```{r,echo=FALSE}
+# LIMIT_BAL density plot
+ggplot(data = df, mapping = aes(x = LIMIT_BAL,fill=DEFAULT)) + 
+  geom_density(alpha=0.4) +
+  ggtitle("LIMIT_BAL Distribution") +
+  xlab("LIMIT_BAL")
+```
+
+Como se menciono anteriormente, la mayoria de los clientes tienen un limite de credito menor a 200,000. Se puede concluir que cuanto mayor sea el limite de credito, menor es la probabilidad de default.
+
+## Porcentaje de consumo del limite
+
+Para añadir al analisis, se decidio incorporar la variable *POR_DEBT_LIMIT* donde se mide el porcentaje de consumo del cliente sobre el limite de credito.
+
+```{r,echo=FALSE,results='hide'}
+df <- df %>% mutate(POR_DEBT_LIMIT=round((((BILL_AMT1+BILL_AMT2+BILL_AMT3+BILL_AMT4+BILL_AMT5+BILL_AMT6)/6)/LIMIT_BAL)*100,2))
+df <- df %>% mutate(rango_POR_DEBT=cut(df$POR_DEBT_LIMIT,c(0,25,50,75,100)))
+df_POR_DEBT <- df %>% group_by(rango_POR_DEBT,DEFAULT) %>% summarise(n = n())
+df_POR_DEBT %>% filter(!is.na(rango_POR_DEBT)) %>% ggplot(aes(x = rango_POR_DEBT, y=n, fill = DEFAULT)) +geom_col(position = "dodge") +
+  geom_text(
+    aes(label =n),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues")+
+  theme(legend.position="none")+
+  labs(y="cantidad de clientes")
+```
+
+```{r,echo=FALSE}
+# porcentaje default
+df_POR_DEBT <- df %>% group_by(rango_POR_DEBT,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+df_POR_DEBT %>% filter(DEFAULT==1 & !is.na(rango_POR_DEBT)) %>% ggplot(aes(x=rango_POR_DEBT,y=freq,fill=rango_POR_DEBT)) +
+  geom_bar(stat="identity") +
+  geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 5,
+    vjust = 1.5, position = position_dodge(.9)
+  ) + 
+  scale_fill_brewer(palette="Blues")+
+  theme(legend.position="none")+
+  labs(y="% default")
+```
+
+La mayoria de los clientes consumen hasta un 25% de su limite de credito. Se cumple la tendencia de que cuanto mayor sea el porcentaje de consumo sobre el limite de credito, mayor es la probabilidad de default.
+
+## Retraso en pagar
+
+```{r,echo=FALSE}
+options(repr.plot.width = 5, repr.plot.height =2)
+g <- ggplot(df,aes(PAY_1))
+p_1 <- g + geom_bar(fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de personas")
+df_PAY1 <- df %>% group_by(PAY_1,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_11 <- df_PAY1 %>% filter(DEFAULT==1) %>% ggplot(aes(x=PAY_1,y=freq,fill=factor(PAY_1)))+
+  geom_bar(stat="identity")+
+  geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  ) + 
+  scale_fill_brewer(palette="Spectral")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+```{r,echo=FALSE}
+g <- ggplot(df,aes(PAY_2))
+p_2 <- g + geom_bar(fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de personas")
+df_PAY2 <- df %>% group_by(PAY_2,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_21 <- df_PAY2 %>% filter(DEFAULT==1) %>% ggplot(aes(x=PAY_2,y=freq,fill=factor(PAY_2)))+
+  geom_bar(stat="identity")+
+    geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  ) + 
+  scale_fill_brewer(palette="Spectral")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+```{r,echo=FALSE}
+g <- ggplot(df,aes(PAY_3))
+p_3 <- g + geom_bar(fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de personas")
+df_PAY3 <- df %>% group_by(PAY_3,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_31 <- df_PAY3 %>% filter(DEFAULT==1) %>% ggplot(aes(x=PAY_3,y=freq,fill=factor(PAY_3)))+
+  geom_bar(stat="identity")+
+    geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Spectral")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+```{r,echo=FALSE}
+g <- ggplot(df,aes(PAY_4))
+p_4 <- g + geom_bar(fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de personas")
+df_PAY4 <- df %>% group_by(PAY_4,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_41 <- df_PAY4 %>% filter(DEFAULT==1) %>% ggplot(aes(x=PAY_4,y=freq,fill=factor(PAY_4)))+
+  geom_bar(stat="identity")+
+    geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  ) + 
+  scale_fill_brewer(palette="Spectral")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+```{r,echo=FALSE}
+g <- ggplot(df,aes(PAY_5))
+p_5 <-g + geom_bar(fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de personas")
+df_PAY5 <- df %>% group_by(PAY_5,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_51 <- df_PAY5 %>% filter(DEFAULT==1) %>% ggplot(aes(x=PAY_5,y=freq,fill=factor(PAY_5)))+
+  geom_bar(stat="identity")+
+    geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Spectral")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+```{r,echo=FALSE,warning=FALSE}
+g <- ggplot(df,aes(PAY_6))
+p_6 <- g + geom_bar(fill="light blue") +
+    geom_text(
+    stat = 'count',
+    aes(label=..count..),
+    colour = "black", size = 3,
+    vjust = 1.5
+    )+
+    labs(y="cantidad de personas")
+df_PAY6 <- df %>% group_by(PAY_6,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_61 <- df_PAY6 %>% filter(DEFAULT==1) %>% ggplot(aes(x=PAY_6,y=freq,fill=factor(PAY_6)))+
+  geom_bar(stat="identity")+
+    geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 3,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Spectral") +
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+```{r,echo=FALSE,fig.align = "center", fig.height = 10, fig.width = 10}
+plot_grid(p_1,p_2,p_3,p_4,p_5,p_6,ncol = 2)
+```
+
+Durante los 6 meses, la distribucion de los retrasos de pago es similar. La mayoria de los clientes pagan sus cuentas a tiempo.
+
+```{r,echo=FALSE,fig.align = "center", fig.height = 10, fig.width = 10}
+plot_grid(p_11,p_21,p_31,p_41,p_51,p_61,ncol = 2)
+```
+
+Se pude observar que los ultimos dos meses tienen distribuciones distintas al resto.
+
+## Monto del estado de cuentas
+```{r,echo=FALSE}
+df <- df %>% mutate(rango_BILL1=cut(df$BILL_AMT1,c(-350000,-1,0,25000, 75000, 200000, 2000000)))
+df <- df %>% mutate(rango_BILL2=cut(df$BILL_AMT2,c(-350000,-1,0,25000, 75000, 200000, 2000000)))
+df <- df %>% mutate(rango_BILL3=cut(df$BILL_AMT3,c(-350000,-1,0,25000, 75000, 200000, 2000000)))
+df <- df %>% mutate(rango_BILL4=cut(df$BILL_AMT4,c(-350000,-1,0,25000, 75000, 200000, 2000000)))
+df <- df %>% mutate(rango_BILL5=cut(df$BILL_AMT5,c(-350000,-1,0,25000, 75000, 200000, 2000000)))
+df <- df %>% mutate(rango_BILL6=cut(df$BILL_AMT6,c(-350000,-1,0,25000, 75000, 200000, 2000000)))
+df_BILL1 <- df %>% group_by(rango_BILL1,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_B1 <- df_BILL1 %>% filter(DEFAULT==1) %>% ggplot(aes(x=rango_BILL1,y=freq,fill=rango_BILL1))+
+  geom_bar(stat="identity")+scale_x_discrete(labels=c("<0","=0","0-25k","25k-75k","75k-200k",">200k"))+ geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 4,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues") +
+  labs(y="% de default")+
+  theme(legend.position="none")
+df_BILL2 <- df %>% group_by(rango_BILL2,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_B2 <- df_BILL2 %>% filter(DEFAULT==1) %>% ggplot(aes(x=rango_BILL2,y=freq,fill=rango_BILL2))+
+  geom_bar(stat="identity")+scale_x_discrete(labels=c("<0","=0","0-25k","25k-75k","75k-200k",">200k"))+ geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 4,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues") +
+  labs(y="% de default")+
+  theme(legend.position="none")
+df_BILL3 <- df %>% group_by(rango_BILL3,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_B3 <- df_BILL3 %>% filter(DEFAULT==1) %>% ggplot(aes(x=rango_BILL3,y=freq,fill=rango_BILL3))+
+  geom_bar(stat="identity")+scale_x_discrete(labels=c("<0","=0","0-25k","25k-75k","75k-200k",">200k"))+ geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 4,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues") +
+  labs(y="% de default")+ 
+  theme(legend.position="none")
+df_BILL4 <- df %>% group_by(rango_BILL4,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_B4 <- df_BILL4 %>% filter(DEFAULT==1) %>% ggplot(aes(x=rango_BILL4,y=freq,fill=rango_BILL4))+
+  geom_bar(stat="identity")+scale_x_discrete(labels=c("<0","=0","0-25k","25k-75k","75k-200k",">200k"))+ geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 4,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues") +
+  labs(y="% de default")+
+  theme(legend.position="none")
+df_BILL5 <- df %>% group_by(rango_BILL5,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_B5 <- df_BILL5 %>% filter(DEFAULT==1) %>% ggplot(aes(x=rango_BILL5,y=freq,fill=rango_BILL5))+
+  geom_bar(stat="identity")+scale_x_discrete(labels=c("<0","=0","0-25k","25k-75k","75k-200k",">200k"))+ geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 4,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues") +
+  labs(y="% de default")+
+  labs(y="% de default")+
+  theme(legend.position="none")
+df_BILL6 <- df %>% group_by(rango_BILL6,DEFAULT) %>% summarise(n = n()) %>% mutate(freq = n / sum(n))
+p_B6 <- df_BILL6 %>% filter(DEFAULT==1) %>% ggplot(aes(x=rango_BILL6,y=freq,fill=rango_BILL6))+
+  geom_bar(stat="identity")+scale_x_discrete(labels=c("<0","=0","0-25k","25k-75k","75k-200k",">200k")) + geom_text(
+    aes(label = paste(as.character((round(freq,2)*100)),"%")),
+    colour = "black", size = 4,
+    vjust = 1.5, position = position_dodge(.9)
+  )+ 
+  scale_fill_brewer(palette="Blues") +
+  labs(y="% de default")+
+  theme(legend.position="none")
+```
+
+```{r,echo=FALSE,fig.align = "center", fig.height = 10, fig.width = 10}
+plot_grid(p_B1,p_B2,p_B3,p_B4,p_B5,p_B6,ncol=2,scale = 1)
+```
+
+Logicamente, aquellos clientes que tienen un consumo menor a 0, tienen una menor probabilidad de default. Algo para destacar es que aquellas personas que tuvieron un consumo igual a 0 o que no tuvieron una factura, tienen una probabilidad mayor de default.
+
+# Problemas de la base de datos
+
+- Los valores ingresados en algunas de las variables, como por ejemplo Marriage, no son consistentes con lo expresado en la descripcion de la base de datos.
+- Para poder utilizar la prediccion en la vida real, se debe mantener actualizada la base de datos todos los meses. Esto tambien quiere decir que probablemente se tenga que cambiar la estrucutura de la base para poder almacenar los datos de varios mesos o años.
+
+# Informacion que se puede agregar
+- Unir el dataset con los datos recolectados en el censo para ver si hay una correcta representatividad de la poblacion para las variables categoricas. Tambien, corrobar con el ingreso promedio en Taiwan.
+- Agregar mas informacion sobre el resto del año o otros años para poder corroborar si existe estacionalidad o no en los datos.
+- Se deberia tener en cuenta la situacion economica para ese año en Taiwan ya que eso puede influir en el comportamiento humano.
+
+# Conclusiones
+
+- Los hombres tienen mas probabilidades de default
+- Los clientes que estan divorciados o viudos tienen mas probabilidades de default
+- Cuanto mayor sea el limite de credito, menor es la probabilidad de default
+- Cuanto mayor sea el porcentaje de consumo sobre el limite de credito, mayor es la probabilidad de default.
+- Aquellos clientes con un porcentaje de consumo de su limite alto, tienen probabilidades mas altas de default
+- Si bien aquellos clientes que tuvieron un consumo igual a 0 o que no tuvieron una factura, tienen una probabilidad mayor de default, puede ser que las variables BILL_AMT0..6 no tienen significancia en el modelo
+- Las variables PAY_0..6 demuestras que cuanto mas tarde el cliente en pagar, mas grandes son las probabilidaes de default. Estas variables tambien estan correlacionadas entre si, por lo tanto se debe analizar su significancia
+
+# Posibles usos
+
+- Puede informarle al banco sobre quienes deberian recibir una tarjeta de credito y/o el limite de credito que le deberian proveer.
+- Da conocimiento mas profundo sobre socios actuales asi como tambien de los potenciales.
+- Permite planificar servicios o productos especificos para sus socios.
+
+
